@@ -24,6 +24,14 @@ import org.apache.maven.wagon.Streams;
 import org.apache.maven.wagon.Wagon;
 import org.apache.maven.wagon.WagonException;
 import org.apache.maven.wagon.providers.ssh.jsch.ScpWagon;
+import org.codehaus.plexus.util.IOUtil;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 
 /**
  * Executes a list of commands against a given server.
@@ -57,6 +65,13 @@ public class SshExecMojo
      */
     private boolean displayCommandOutputs = true;
 
+    /**
+     * Option to `tail -f` remote command's outputs
+     *
+     * @parameter default-value = "true"
+     */
+    private boolean tailOut = true;
+
     protected void execute( final Wagon wagon )
         throws MojoExecutionException
     {
@@ -64,14 +79,26 @@ public class SshExecMojo
         {
             for ( int i = 0; i < commands.length; i++ )
             {
+
                 try
                 {
-                    Streams stream = ( (ScpWagon) wagon ).executeCommand( commands[i], true, false );
                     this.getLog().info( "sshexec: " + commands[i] + " ..." );
                     if ( displayCommandOutputs )
                     {
-                        System.out.println( stream.getOut() );
-                        System.out.println( stream.getErr() );
+                        if ( tailOut )
+                        {
+                            tailExecute((ScpWagon) wagon, commands[i]);
+                        }
+                        else
+                        {
+                            Streams stream = ( (ScpWagon) wagon ).executeCommand( commands[i], true, false );
+                            System.out.println( stream.getOut() );
+                            System.out.println( stream.getErr() );
+                        }
+                    }
+                    else
+                    {
+                        ( (ScpWagon) wagon ).executeCommand( commands[i], true, false );
                     }
                 }
                 catch ( final WagonException e )
@@ -87,6 +114,61 @@ public class SshExecMojo
                 }
 
             }
+        }
+    }
+
+    private void tailExecute (ScpWagon scpWagon, String command)
+            throws MojoExecutionException
+    {
+        try
+        {
+            final PipedInputStream outInputStream = new PipedInputStream();
+            final PipedInputStream errInputStream = new PipedInputStream();
+            final PipedOutputStream outOutputStream = new PipedOutputStream();
+            final PipedOutputStream errOutputStream = new PipedOutputStream();
+            outInputStream.connect(outOutputStream);
+            errInputStream.connect(errOutputStream);
+            scpWagon.executeCommand( command, true, false, errOutputStream, outOutputStream );
+            pipeStart( new BufferedReader( new InputStreamReader( outInputStream ) ), outInputStream, outOutputStream );
+            pipeStart( new BufferedReader( new InputStreamReader( errInputStream ) ), errInputStream, errOutputStream );
+        }
+        catch (Exception e)
+        {
+            if ( this.failOnError )
+            {
+                throw new MojoExecutionException( "Unable to execute remote command", e );
+            }
+            else
+            {
+                this.getLog().warn( e );
+            }
+        }
+    }
+
+    private void pipeStart(final BufferedReader reader, final InputStream inputStream, final OutputStream outputStream) {
+        try
+        {
+            while ( true )
+            {
+                String line = reader.readLine();
+
+                if ( line == null )
+                {
+                    break;
+                }
+
+                System.out.println(line);
+            }
+        }
+        catch ( Exception e )
+        {
+            e.printStackTrace();
+        }
+        finally
+        {
+            IOUtil.close( reader );
+            IOUtil.close( inputStream );
+            IOUtil.close( outputStream );
         }
     }
 }
