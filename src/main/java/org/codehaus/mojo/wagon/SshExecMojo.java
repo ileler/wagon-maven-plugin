@@ -25,6 +25,7 @@ import org.apache.maven.wagon.Wagon;
 import org.apache.maven.wagon.WagonException;
 import org.apache.maven.wagon.providers.ssh.jsch.ScpWagon;
 import org.codehaus.plexus.util.IOUtil;
+import org.codehaus.plexus.util.StringUtils;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -77,6 +78,12 @@ public class SshExecMojo
     {
         if ( commands != null )
         {
+            String basedir = wagon.getRepository().getBasedir();
+            String cdBasedir = "";
+            if ( StringUtils.isNotBlank(basedir) )
+            {
+                cdBasedir = "cd " + basedir + " && ";
+            }
             for ( int i = 0; i < commands.length; i++ )
             {
 
@@ -87,18 +94,18 @@ public class SshExecMojo
                     {
                         if ( tailOut )
                         {
-                            tailExecute((ScpWagon) wagon, commands[i]);
+                            tailExecute((ScpWagon) wagon, cdBasedir + commands[i]);
                         }
                         else
                         {
-                            Streams stream = ( (ScpWagon) wagon ).executeCommand( commands[i], true, false );
+                            Streams stream = ( (ScpWagon) wagon ).executeCommand( cdBasedir + commands[i], true, false );
                             System.out.println( stream.getOut() );
                             System.out.println( stream.getErr() );
                         }
                     }
                     else
                     {
-                        ( (ScpWagon) wagon ).executeCommand( commands[i], true, false );
+                        ( (ScpWagon) wagon ).executeCommand( cdBasedir + commands[i], true, false );
                     }
                 }
                 catch ( final WagonException e )
